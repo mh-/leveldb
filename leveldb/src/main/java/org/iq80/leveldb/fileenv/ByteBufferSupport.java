@@ -1,4 +1,11 @@
 /*
+ * ---------------------------------------------------------------------------------------------------
+ * Michael Huebler, 2020-08: As required by the license
+ * ("You must cause any modified files to carry prominent notices stating that You changed the files")
+ * I hereby state that I changed this file.
+ * ---------------------------------------------------------------------------------------------------
+ */
+/*
  * Copyright (C) 2011 the original author or authors.
  * See the notice.md file distributed with this work for additional
  * information regarding copyright ownership.
@@ -18,53 +25,49 @@
 package org.iq80.leveldb.fileenv;
 
 import com.google.common.base.Throwables;
-
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
+
 import java.nio.MappedByteBuffer;
 
-final class ByteBufferSupport
+public final class ByteBufferSupport
 {
-    private static final MethodHandle INVOKE_CLEANER;
+    private static Method getCleaner;
+    private static Method free;
+    private static Method clean;
+    private static boolean useOpenJdk = true;
 
     static {
-        MethodHandle invoker;
         try {
-            // Java 9 added an invokeCleaner method to Unsafe to work around
-            // module visibility issues for code that used to rely on DirectByteBuffer's cleaner()
-            Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
-            Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            invoker = MethodHandles.lookup()
-                    .findVirtual(unsafeClass, "invokeCleaner", MethodType.methodType(void.class, ByteBuffer.class))
-                    .bindTo(theUnsafe.get(null));
+            getCleaner = Class.forName("java.nio.DirectByteBuffer").getDeclaredMethod("cleaner");
+            getCleaner.setAccessible(true);
         }
-        catch (Exception e) {
-            // fall back to pre-java 9 compatible behavior
+        catch (ReflectiveOperationException e) {
+            useOpenJdk = false;
+        }
+
+        if (useOpenJdk) {
             try {
-                Class<?> directByteBufferClass = Class.forName("java.nio.DirectByteBuffer");
-                Class<?> cleanerClass = Class.forName("sun.misc.Cleaner");
-
-                Method cleanerMethod = directByteBufferClass.getDeclaredMethod("cleaner");
-                cleanerMethod.setAccessible(true);
-                MethodHandle getCleaner = MethodHandles.lookup().unreflect(cleanerMethod);
-
-                Method cleanMethod = cleanerClass.getDeclaredMethod("clean");
-                cleanerMethod.setAccessible(true);
-                MethodHandle clean = MethodHandles.lookup().unreflect(cleanMethod);
-
-                clean = MethodHandles.dropArguments(clean, 1, directByteBufferClass);
-                invoker = MethodHandles.foldArguments(clean, getCleaner);
+                Class<?> returnType = getCleaner.getReturnType();
+                if (Runnable.class.isAssignableFrom(returnType)) {
+                    clean = Runnable.class.getMethod("run");
+                }
+                else {
+                    clean = returnType.getMethod("clean");
+                }
             }
-            catch (Exception e1) {
-                throw new AssertionError(e1);
+            catch (NoSuchMethodException e) {
+                throw new AssertionError(e);
             }
         }
-        INVOKE_CLEANER = invoker;
+        else {
+            try {
+                free = Class.forName("java.nio.DirectByteBuffer").getDeclaredMethod("free");
+                free.setAccessible(true);
+            }
+            catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+        }
     }
 
     private ByteBufferSupport()
@@ -74,9 +77,15 @@ final class ByteBufferSupport
     public static void unmap(MappedByteBuffer buffer)
     {
         try {
-            INVOKE_CLEANER.invoke(buffer);
+            if (useOpenJdk) {
+                Object cleaner = getCleaner.invoke(buffer);
+                clean.invoke(cleaner);
+            }
+            else {
+                free.invoke(buffer);
+            }
         }
-        catch (Throwable ignored) {
+        catch (Exception ignored) {
             throw Throwables.propagate(ignored);
         }
     }
