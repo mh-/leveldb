@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
+  ***************************************************************************************************
+  Michael Huebler, 2020-08: As required by the license
+  ("You must cause any modified files to carry prominent notices stating that You changed the files")
+  I hereby state that I changed this file.
+  ***************************************************************************************************
+
   Licensed to the Apache Software Foundation (ASF) under one or more
   contributor license agreements.  See the NOTICE file distributed with
   this work for additional information regarding copyright ownership.
@@ -45,6 +51,7 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
+            <version>29.0-android</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
